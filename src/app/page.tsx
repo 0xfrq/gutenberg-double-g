@@ -250,7 +250,7 @@ export default function Home() {
               DoubleG Reader
             </h1>
             <p className="max-w-2xl text-base text-amber-900/80">
-              Search Project Gutenberg, cache EPUBs into Supabase storage, and
+              Search Project Gutenberg, cache EPUBs, and
               keep a personal shelf with collections, favorites, and a fully
               customizable reader.
             </p>
