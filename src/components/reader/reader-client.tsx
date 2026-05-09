@@ -37,6 +37,22 @@ type ReaderClientProps = {
   source: "gutenberg" | "upload";
 };
 
+function FullscreenEnterIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 5V1H5M9 1H13V5M13 9V13H9M5 13H1V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function FullscreenExitIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 1V5H1M9 5V1H13M9 13V9H13M1 9H5V13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 export default function ReaderClient({ id, source }: ReaderClientProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<any>(null);
@@ -49,6 +65,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [title, setTitle] = useState("Loading...");
   const [loading, setLoading] = useState(true);
   const [toolbarVisible, setToolbarVisible] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const toolbarTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load settings from localStorage
@@ -173,9 +190,30 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     const handleKeys = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight") renditionRef.current?.next();
       if (event.key === "ArrowLeft") renditionRef.current?.prev();
+      if (event.key === "f") {
+        event.preventDefault();
+        toggleFullscreen();
+      }
     };
     window.addEventListener("keydown", handleKeys);
     return () => window.removeEventListener("keydown", handleKeys);
+  }, []);
+
+  // Fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   // Toolbar auto-hide
@@ -209,31 +247,46 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       onMouseMove={showToolbar}
       onTouchStart={showToolbar}
     >
-      {/* Toolbar — fades in on movement */}
+      {/* Toolbar — fades in on movement, two-row on mobile */}
       <div
-        className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-4 px-6 py-3 transition-all duration-300"
+        className="absolute top-0 left-0 right-0 z-20 flex flex-col transition-all duration-300"
         style={{
           opacity: toolbarVisible ? 1 : 0,
           pointerEvents: toolbarVisible ? "auto" : "none",
-          background: `linear-gradient(to bottom, ${activeTheme.background}ee, transparent)`,
+          background: `linear-gradient(to bottom, ${activeTheme.background}f2 0%, ${activeTheme.background}aa 75%, transparent 100%)`,
         }}
       >
-        <div className="flex items-center gap-4 min-w-0">
+        {/* Row 1: ← Library · Title · Fullscreen */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
           <Link
             href="/"
             className="shrink-0 text-xs uppercase tracking-widest opacity-50 hover:opacity-100 transition-opacity"
           >
             ← Library
           </Link>
-          <h1 className="text-sm font-semibold truncate opacity-80">{title}</h1>
+
+          <h1 className="flex-1 min-w-0 text-xs font-semibold truncate opacity-60 text-center">
+            {title}
+          </h1>
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}
+            className="shrink-0 rounded-full border border-current/20 p-1.5 opacity-60 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center"
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 text-xs shrink-0">
+        {/* Row 2: Reading controls — scrollable on very small screens */}
+        <div className="flex items-center gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
           {/* Theme */}
           <select
             value={settings.theme}
             onChange={(e) => handleThemeChange(e.target.value as ReaderSettings["theme"])}
-            className="rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+            className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
           >
             <option value="light">Light</option>
             <option value="sepia">Sepia</option>
@@ -245,16 +298,19 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
           <select
             value={settings.fontFamily}
             onChange={(e) => setSettings((c) => ({ ...c, fontFamily: e.target.value }))}
-            className="rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+            className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
           >
             {fontOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
 
+          {/* Divider */}
+          <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
+
           {/* Size */}
-          <div className="flex items-center gap-2 opacity-70">
-            <span className="text-xs">A</span>
+          <div className="flex items-center gap-1.5 opacity-70 shrink-0">
+            <span className="text-xs leading-none select-none">A</span>
             <input
               type="range"
               min={14}
@@ -263,21 +319,32 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
               onChange={(e) => setSettings((c) => ({ ...c, fontSize: Number(e.target.value) }))}
               className="w-20 accent-current"
             />
-            <span className="text-sm">A</span>
+            <span className="text-sm leading-none select-none">A</span>
           </div>
 
           {/* Custom colors */}
           {settings.theme === "custom" && (
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer">
+            <>
+              <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
+              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
                 <span>Bg</span>
-                <input type="color" value={settings.background} onChange={(e) => setSettings((c) => ({ ...c, background: e.target.value }))} className="w-6 h-6 rounded cursor-pointer" />
+                <input
+                  type="color"
+                  value={settings.background}
+                  onChange={(e) => setSettings((c) => ({ ...c, background: e.target.value }))}
+                  className="w-6 h-6 rounded cursor-pointer"
+                />
               </label>
-              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer">
+              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
                 <span>Text</span>
-                <input type="color" value={settings.text} onChange={(e) => setSettings((c) => ({ ...c, text: e.target.value }))} className="w-6 h-6 rounded cursor-pointer" />
+                <input
+                  type="color"
+                  value={settings.text}
+                  onChange={(e) => setSettings((c) => ({ ...c, text: e.target.value }))}
+                  className="w-6 h-6 rounded cursor-pointer"
+                />
               </label>
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -302,10 +369,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
             />
 
             {/* EPUB container */}
-            <div
-              ref={containerRef}
-              className="absolute inset-0"
-            />
+            <div ref={containerRef} className="absolute inset-0" />
 
             {/* Right tap zone */}
             <button
