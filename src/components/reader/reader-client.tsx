@@ -66,7 +66,6 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [loading, setLoading] = useState(true);
   const [toolbarVisible, setToolbarVisible] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const toolbarTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load settings from localStorage
   useEffect(() => {
@@ -216,13 +215,6 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  // Toolbar auto-hide
-  const showToolbar = () => {
-    setToolbarVisible(true);
-    if (toolbarTimeout.current) clearTimeout(toolbarTimeout.current);
-    toolbarTimeout.current = setTimeout(() => setToolbarVisible(false), 3000);
-  };
-
   const handleThemeChange = (value: ReaderSettings["theme"]) => {
     const preset = themePresets[value as "light" | "sepia" | "dark"];
     if (preset) {
@@ -244,108 +236,122 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     <div
       className="fixed inset-0 flex flex-col"
       style={{ background: activeTheme.background, color: activeTheme.text }}
-      onMouseMove={showToolbar}
-      onTouchStart={showToolbar}
     >
-      {/* Toolbar — fades in on movement, two-row on mobile */}
-      <div
-        className="absolute top-0 left-0 right-0 z-20 flex flex-col transition-all duration-300"
-        style={{
-          opacity: toolbarVisible ? 1 : 0,
-          pointerEvents: toolbarVisible ? "auto" : "none",
-          background: `linear-gradient(to bottom, ${activeTheme.background}f2 0%, ${activeTheme.background}aa 75%, transparent 100%)`,
-        }}
+      {/* Toolbar Wrapper 
+        Handles mouse entering/leaving the top area specifically 
+      */}
+      <div 
+        className="absolute top-0 left-0 right-0 z-20"
+        onMouseEnter={() => setToolbarVisible(true)}
+        onMouseLeave={() => setToolbarVisible(false)}
       >
-        {/* Row 1: ← Library · Title · Fullscreen */}
-        <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
-          <Link
-            href="/"
-            className="shrink-0 text-xs uppercase tracking-widest opacity-50 hover:opacity-100 transition-opacity"
-          >
-            ← Library
-          </Link>
+        {/* Invisible catch area: Allows you to hover the very top edge to show the menu. Also useful to tap on mobile. */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-10"
+          style={{ pointerEvents: toolbarVisible ? "none" : "auto" }}
+          onClick={() => setToolbarVisible(true)}
+        />
 
-          <h1 className="flex-1 min-w-0 text-xs font-semibold truncate opacity-60 text-center">
-            {title}
-          </h1>
+        {/* Toolbar Content */}
+        <div
+          className="relative flex flex-col transition-all duration-300"
+          style={{
+            opacity: toolbarVisible ? 1 : 0,
+            pointerEvents: toolbarVisible ? "auto" : "none",
+            background: `linear-gradient(to bottom, ${activeTheme.background}f2 0%, ${activeTheme.background}aa 75%, transparent 100%)`,
+          }}
+        >
+          {/* Row 1: ← Library · Title · Fullscreen */}
+          <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+            <Link
+              href="/"
+              className="shrink-0 text-xs uppercase tracking-widest opacity-50 hover:opacity-100 transition-opacity"
+            >
+              ← Library
+            </Link>
 
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}
-            className="shrink-0 rounded-full border border-current/20 p-1.5 opacity-60 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center"
-            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          >
-            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
-          </button>
-        </div>
+            <h1 className="flex-1 min-w-0 text-xs font-semibold truncate opacity-60 text-center">
+              {title}
+            </h1>
 
-        {/* Row 2: Reading controls — scrollable on very small screens */}
-        <div className="flex items-center gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          {/* Theme */}
-          <select
-            value={settings.theme}
-            onChange={(e) => handleThemeChange(e.target.value as ReaderSettings["theme"])}
-            className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
-          >
-            <option value="light">Light</option>
-            <option value="sepia">Sepia</option>
-            <option value="dark">Dark</option>
-            <option value="custom">Custom</option>
-          </select>
-
-          {/* Font */}
-          <select
-            value={settings.fontFamily}
-            onChange={(e) => setSettings((c) => ({ ...c, fontFamily: e.target.value }))}
-            className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
-          >
-            {fontOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-
-          {/* Divider */}
-          <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
-
-          {/* Size */}
-          <div className="flex items-center gap-1.5 opacity-70 shrink-0">
-            <span className="text-xs leading-none select-none">A</span>
-            <input
-              type="range"
-              min={14}
-              max={28}
-              value={settings.fontSize}
-              onChange={(e) => setSettings((c) => ({ ...c, fontSize: Number(e.target.value) }))}
-              className="w-20 accent-current"
-            />
-            <span className="text-sm leading-none select-none">A</span>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"}
+              className="shrink-0 rounded-full border border-current/20 p-1.5 opacity-60 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center"
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            >
+              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
+            </button>
           </div>
 
-          {/* Custom colors */}
-          {settings.theme === "custom" && (
-            <>
-              <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
-              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
-                <span>Bg</span>
-                <input
-                  type="color"
-                  value={settings.background}
-                  onChange={(e) => setSettings((c) => ({ ...c, background: e.target.value }))}
-                  className="w-6 h-6 rounded cursor-pointer"
-                />
-              </label>
-              <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
-                <span>Text</span>
-                <input
-                  type="color"
-                  value={settings.text}
-                  onChange={(e) => setSettings((c) => ({ ...c, text: e.target.value }))}
-                  className="w-6 h-6 rounded cursor-pointer"
-                />
-              </label>
-            </>
-          )}
+          {/* Row 2: Reading controls — scrollable on very small screens */}
+          <div className="flex items-center gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {/* Theme */}
+            <select
+              value={settings.theme}
+              onChange={(e) => handleThemeChange(e.target.value as ReaderSettings["theme"])}
+              className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+            >
+              <option value="light">Light</option>
+              <option value="sepia">Sepia</option>
+              <option value="dark">Dark</option>
+              <option value="custom">Custom</option>
+            </select>
+
+            {/* Font */}
+            <select
+              value={settings.fontFamily}
+              onChange={(e) => setSettings((c) => ({ ...c, fontFamily: e.target.value }))}
+              className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+            >
+              {fontOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+
+            {/* Divider */}
+            <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
+
+            {/* Size */}
+            <div className="flex items-center gap-1.5 opacity-70 shrink-0">
+              <span className="text-xs leading-none select-none">A</span>
+              <input
+                type="range"
+                min={14}
+                max={28}
+                value={settings.fontSize}
+                onChange={(e) => setSettings((c) => ({ ...c, fontSize: Number(e.target.value) }))}
+                className="w-20 accent-current"
+              />
+              <span className="text-sm leading-none select-none">A</span>
+            </div>
+
+            {/* Custom colors */}
+            {settings.theme === "custom" && (
+              <>
+                <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
+                <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
+                  <span>Bg</span>
+                  <input
+                    type="color"
+                    value={settings.background}
+                    onChange={(e) => setSettings((c) => ({ ...c, background: e.target.value }))}
+                    className="w-6 h-6 rounded cursor-pointer"
+                  />
+                </label>
+                <label className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer shrink-0 text-xs">
+                  <span>Text</span>
+                  <input
+                    type="color"
+                    value={settings.text}
+                    onChange={(e) => setSettings((c) => ({ ...c, text: e.target.value }))}
+                    className="w-6 h-6 rounded cursor-pointer"
+                  />
+                </label>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
