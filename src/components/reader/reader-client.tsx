@@ -116,6 +116,14 @@ function saveProgress(bookId: string, progress: BookProgress) {
 
 // ─── Icons ─────────────────────────────────────────────────────────────────────
 
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 function FullscreenEnterIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -573,6 +581,18 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
               </div>
             )}
 
+            {/* Hide menu button */}
+            <button
+              type="button"
+              onClick={() => setToolbarVisible(false)}
+              title="Hide toolbar"
+              className="shrink-0 rounded-full border border-current/20 p-1.5 opacity-60 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center"
+              aria-label="Hide toolbar"
+            >
+              <CloseIcon />
+            </button>
+
+            {/* Fullscreen button */}
             <button
               type="button"
               onClick={toggleFullscreen}
