@@ -821,7 +821,6 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         </div>
       )}
 
-      {/* ── Bottom gradient fade ─────────────────────────────────────────────── */}
       <div
         className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none transition-opacity duration-300 z-10"
         style={{
