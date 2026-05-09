@@ -175,6 +175,9 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [toolbarVisible, setToolbarVisible] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pageInfo, setPageInfo] = useState<PageInfo>(null);
+  const [pageJumpValue, setPageJumpValue] = useState("");
+  const [pageJumpFocused, setPageJumpFocused] = useState(false);
+  const pageJumpRef = useRef<HTMLInputElement>(null);
 
   // ── Load settings from cookie on mount ──────────────────────────────────────
   useEffect(() => {
@@ -328,16 +331,31 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   // ── Keyboard nav ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleKeys = (event: KeyboardEvent) => {
+      // Don't hijack keys when the page-jump input is focused
+      if (pageJumpFocused) {
+        if (event.key === "Enter") handlePageJump();
+        if (event.key === "Escape") {
+          setPageJumpValue("");
+          setPageJumpFocused(false);
+        }
+        return;
+      }
       if (event.key === "ArrowRight") renditionRef.current?.next();
       if (event.key === "ArrowLeft") renditionRef.current?.prev();
       if (event.key === "f") {
         event.preventDefault();
         toggleFullscreen();
       }
+      if (event.key === "g" && pageInfo) {
+        event.preventDefault();
+        setToolbarVisible(true);
+        setTimeout(() => pageJumpRef.current?.focus(), 50);
+      }
     };
     window.addEventListener("keydown", handleKeys);
     return () => window.removeEventListener("keydown", handleKeys);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageJumpFocused, pageJumpValue, pageInfo]);
 
   // ── Fullscreen ───────────────────────────────────────────────────────────────
   const toggleFullscreen = () => {
@@ -357,6 +375,24 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   }, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
+  const handlePageJump = () => {
+    const num = parseInt(pageJumpValue, 10);
+    if (!pageInfo || isNaN(num)) {
+      setPageJumpValue("");
+      setPageJumpFocused(false);
+      return;
+    }
+    const clamped = Math.max(1, Math.min(num, pageInfo.total));
+    try {
+      const cfi = bookRef.current?.locations.cfiFromLocation(clamped - 1);
+      if (cfi) renditionRef.current?.display(cfi);
+    } catch {
+      // ignore — locations may not be generated yet
+    }
+    setPageJumpValue("");
+    setPageJumpFocused(false);
+  };
+
   const handleThemeChange = (value: ReaderSettings["theme"]) => {
     const preset = themePresets[value as "light" | "sepia" | "dark"];
     if (preset) {
@@ -416,6 +452,62 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
             <h1 className="flex-1 min-w-0 text-xs font-semibold truncate opacity-60 text-center">
               {title}
             </h1>
+
+            {/* Page jump */}
+            {pageInfo && (
+              <div className="shrink-0 flex items-center gap-1">
+                {pageJumpFocused ? (
+                  <input
+                    ref={pageJumpRef}
+                    type="number"
+                    min={1}
+                    max={pageInfo.total}
+                    value={pageJumpValue}
+                    onChange={(e) => setPageJumpValue(e.target.value)}
+                    onBlur={() => {
+                      // small delay so a click on the Go button registers
+                      setTimeout(() => {
+                        setPageJumpFocused(false);
+                        setPageJumpValue("");
+                      }, 150);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handlePageJump();
+                      if (e.key === "Escape") {
+                        setPageJumpValue("");
+                        setPageJumpFocused(false);
+                      }
+                    }}
+                    placeholder={String(pageInfo.current)}
+                    autoFocus
+                    className="w-16 rounded-full border border-current/30 bg-transparent px-2.5 py-1 text-xs text-center tabular-nums opacity-80 focus:opacity-100 focus:outline-none"
+                    style={{ color: activeTheme.text }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    title="Jump to page (G)"
+                    onClick={() => {
+                      setPageJumpFocused(true);
+                      setTimeout(() => pageJumpRef.current?.focus(), 30);
+                    }}
+                    className="rounded-full border border-current/20 px-2.5 py-1 text-xs tabular-nums opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    p.&nbsp;{pageInfo.current}
+                    <span className="opacity-40 ml-1">/ {pageInfo.total}</span>
+                  </button>
+                )}
+                {pageJumpFocused && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); handlePageJump(); }}
+                    className="rounded-full border border-current/30 px-2.5 py-1 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    Go
+                  </button>
+                )}
+              </div>
+            )}
 
             <button
               type="button"
