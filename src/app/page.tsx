@@ -253,7 +253,7 @@ export default function Home() {
               value={draftQuery}
               onChange={(e) => setDraftQuery(e.target.value)}
               placeholder="Search by title, author, or subject…"
-              className="flex-1 rounded-2xl bg-transparent px-4 py-2.5 text-sm text-amber-900 placeholder:text-amber-400 focus:outline-none"
+              className="flex-1 rounded-2xl bg-transparent px-4 py-2.5 text-sm text-amber-900 placeholder:text-amber-800 focus:outline-none"
             />
             {query && (
               <button

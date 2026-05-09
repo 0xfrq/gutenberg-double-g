@@ -87,6 +87,33 @@ function saveSettingsToCookie(settings: ReaderSettings) {
   setCookie(COOKIE_KEY, JSON.stringify(settings), COOKIE_MAX_AGE);
 }
 
+// ─── Per-book reading progress cookie ─────────────────────────────────────────
+// Key: `reader-progress:{bookId}` — stored separately per book.
+
+type BookProgress = {
+  cfi: string;   // epubjs CFI — exact position for resuming
+  page: number;  // human-readable page number shown in the toast
+  total: number;
+};
+
+function progressCookieKey(bookId: string) {
+  return `reader-progress:${bookId}`;
+}
+
+function loadProgress(bookId: string): BookProgress | null {
+  try {
+    const raw = getCookie(progressCookieKey(bookId));
+    if (!raw) return null;
+    return JSON.parse(raw) as BookProgress;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(bookId: string, progress: BookProgress) {
+  setCookie(progressCookieKey(bookId), JSON.stringify(progress), COOKIE_MAX_AGE);
+}
+
 // ─── Icons ─────────────────────────────────────────────────────────────────────
 
 function FullscreenEnterIcon() {
@@ -179,6 +206,13 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [pageJumpFocused, setPageJumpFocused] = useState(false);
   const pageJumpRef = useRef<HTMLInputElement>(null);
 
+  // Resume toast — shown when a saved progress position is found for this book
+  const [resumeToast, setResumeToast] = useState<BookProgress | null>(null);
+  const [resumeToastVisible, setResumeToastVisible] = useState(false);
+  const resumeToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Throttle progress saves — only write cookie at most once per 3 s while reading
+  const saveProgressThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ── Load settings from cookie on mount ──────────────────────────────────────
   useEffect(() => {
     setSettings(loadSettingsFromCookie());
@@ -254,39 +288,50 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       bookRef.current = book;
       renditionRef.current = rendition;
 
-      // ── Page tracking ────────────────────────────────────────────────────────
-      // epubjs exposes location info via the "relocated" event.
-      // `location.start.displayed` has { page, total } for the current section,
-      // but for a book-wide page count we use the locations object if generated,
-      // or fall back to section-level numbers.
+      // ── Page tracking (section-level, immediate) ────────────────────────────
       rendition.on("relocated", (location: any) => {
         try {
           const displayed = location?.start?.displayed;
           if (displayed) {
-            // Section-relative pages (always available without pre-generating locations)
             setPageInfo({ current: displayed.page, total: displayed.total });
           }
-        } catch {
-          // Ignore silently
-        }
+        } catch { /* ignore */ }
       });
 
-      // Optionally generate book-wide locations for accurate global page numbers.
-      // This is async and may take a moment on large books; we update once ready.
+      // ── Book-wide locations + progress save + resume toast ───────────────────
       book.ready.then(() => {
         book.locations.generate(1024).then(() => {
-          // Re-subscribe after locations are ready to get global cfi-based pages
+          // After locations are ready, upgrade the relocated handler to use
+          // global CFI-based page numbers AND save progress on every page turn.
           rendition.on("relocated", (location: any) => {
             try {
-              const currentPage = book.locations.locationFromCfi(location.start.cfi);
+              const cfi = location?.start?.cfi;
+              const currentPage = book.locations.locationFromCfi(cfi);
               const totalPages = book.locations.total;
               if (typeof currentPage === "number" && totalPages > 0) {
-                setPageInfo({ current: currentPage + 1, total: totalPages });
+                const pageNum = currentPage + 1;
+                setPageInfo({ current: pageNum, total: totalPages });
+
+                // Throttled progress save — write at most once every 3 s
+                if (saveProgressThrottleRef.current) clearTimeout(saveProgressThrottleRef.current);
+                saveProgressThrottleRef.current = setTimeout(() => {
+                  saveProgress(id, { cfi, page: pageNum, total: totalPages });
+                }, 3000);
               }
-            } catch {
-              // Fall back to section-level numbers already set
-            }
+            } catch { /* fall back to section-level numbers already set */ }
           });
+
+          // Check for a saved position for this book and show the resume toast
+          const saved = loadProgress(id);
+          if (saved?.cfi && saved.page > 1) {
+            setResumeToast(saved);
+            setResumeToastVisible(true);
+            // Auto-dismiss after 8 seconds
+            resumeToastTimerRef.current = setTimeout(() => {
+              setResumeToastVisible(false);
+              setTimeout(() => setResumeToast(null), 400); // wait for fade-out
+            }, 8000);
+          }
         });
       });
 
@@ -302,8 +347,13 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       renditionRef.current = null;
       bookRef.current = null;
       setPageInfo(null);
+      // Clear timers on unmount
+      if (saveProgressThrottleRef.current) clearTimeout(saveProgressThrottleRef.current);
+      if (resumeToastTimerRef.current) clearTimeout(resumeToastTimerRef.current);
+      setResumeToast(null);
+      setResumeToastVisible(false);
     };
-  }, [signedUrl]);
+  }, [signedUrl, id]);
 
   // ── Apply theme/font ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -391,6 +441,20 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     }
     setPageJumpValue("");
     setPageJumpFocused(false);
+  };
+
+  const dismissResumeToast = () => {
+    if (resumeToastTimerRef.current) clearTimeout(resumeToastTimerRef.current);
+    setResumeToastVisible(false);
+    setTimeout(() => setResumeToast(null), 400);
+  };
+
+  const handleResume = () => {
+    if (!resumeToast?.cfi) return;
+    try {
+      renditionRef.current?.display(resumeToast.cfi);
+    } catch { /* ignore */ }
+    dismissResumeToast();
   };
 
   const handleThemeChange = (value: ReaderSettings["theme"]) => {
@@ -674,6 +738,65 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
             >
               {pageInfo.current} / {pageInfo.total}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Resume toast ────────────────────────────────────────────────────── */}
+      {resumeToast && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-30 flex justify-center pointer-events-none"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 52px)" }}
+        >
+          <div
+            className="pointer-events-auto flex items-center gap-3 rounded-2xl px-4 py-3 shadow-lg transition-all duration-400"
+            style={{
+              opacity: resumeToastVisible ? 1 : 0,
+              transform: resumeToastVisible ? "translateY(0)" : "translateY(12px)",
+              background: activeTheme.background,
+              color: activeTheme.text,
+              border: `1px solid ${activeTheme.text}22`,
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              maxWidth: "min(420px, calc(100vw - 32px))",
+            }}
+          >
+            {/* Book icon */}
+            <span className="shrink-0 text-base opacity-50">📖</span>
+
+            {/* Text */}
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold" style={{ opacity: 0.9 }}>
+                Continue reading?
+              </span>
+              <span className="text-xs tabular-nums" style={{ opacity: 0.5 }}>
+                You were on page {resumeToast.page} of {resumeToast.total}
+              </span>
+            </div>
+
+            {/* Resume button */}
+            <button
+              type="button"
+              onClick={handleResume}
+              className="shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-100"
+              style={{
+                background: activeTheme.text,
+                color: activeTheme.background,
+                opacity: 0.85,
+              }}
+            >
+              Resume
+            </button>
+
+            {/* Dismiss */}
+            <button
+              type="button"
+              onClick={dismissResumeToast}
+              aria-label="Dismiss"
+              className="shrink-0 text-sm opacity-30 hover:opacity-70 transition-opacity leading-none"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
