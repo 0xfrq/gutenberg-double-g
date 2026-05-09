@@ -18,10 +18,32 @@ const themePresets = {
   dark: { background: "#0f0f0d", text: "#e7e1d6" },
 };
 
+// Fonts used by Kindle, Kobo, Apple Books, and other major e-readers.
+// All loaded via Google Fonts (see <GoogleFontsLoader> below).
 const fontOptions = [
-  { label: "Literata", value: "Literata, serif" },
-  { label: "Manrope", value: "Manrope, sans-serif" },
-  { label: "Georgia", value: "Georgia, serif" },
+  // ── Serif — reading workhorses ──────────────────────────────────────────────
+  { label: "Bookerly",        value: "'Bookerly', serif",          group: "Serif" },  // Kindle default (approximated via Literata on web)
+  { label: "Literata",        value: "'Literata', serif",          group: "Serif" },  // Google Play Books default
+  { label: "Georgia",         value: "Georgia, serif",             group: "Serif" },  // Kindle classic, Apple Books
+  { label: "Palatino",        value: "'Palatino Linotype', Palatino, serif", group: "Serif" }, // Kobo, Apple Books
+  { label: "EB Garamond",     value: "'EB Garamond', serif",       group: "Serif" },  // Kobo, classic book feel
+  { label: "Lora",            value: "'Lora', serif",              group: "Serif" },  // Kobo
+  { label: "Merriweather",    value: "'Merriweather', serif",      group: "Serif" },  // Kindle Fire, popular e-ink
+  { label: "Crimson Pro",     value: "'Crimson Pro', serif",       group: "Serif" },  // Apple Books option
+  { label: "Bitter",          value: "'Bitter', serif",            group: "Serif" },  // Designed for screens/e-readers
+  { label: "Libre Baskerville", value: "'Libre Baskerville', serif", group: "Serif" }, // Kobo
+  { label: "PT Serif",        value: "'PT Serif', serif",          group: "Serif" },  // Kobo
+  // ── Sans-serif ──────────────────────────────────────────────────────────────
+  { label: "Helvetica / Arial", value: "Helvetica, Arial, sans-serif", group: "Sans" }, // Kindle
+  { label: "Trebuchet MS",    value: "'Trebuchet MS', sans-serif", group: "Sans" },   // Kindle
+  { label: "Manrope",         value: "'Manrope', sans-serif",      group: "Sans" },
+  { label: "Nunito",          value: "'Nunito', sans-serif",       group: "Sans" },   // Kobo, dyslexia-friendly
+  { label: "Source Sans 3",   value: "'Source Sans 3', sans-serif", group: "Sans" }, // Adobe / Kobo
+  { label: "Noto Sans",       value: "'Noto Sans', sans-serif",    group: "Sans" },   // Kindle global / wide language coverage
+  // ── Dyslexia-friendly ───────────────────────────────────────────────────────
+  { label: "OpenDyslexic",    value: "'OpenDyslexic', sans-serif", group: "Accessibility" }, // Kindle, Kobo built-in option
+  // ── Monospace ───────────────────────────────────────────────────────────────
+  { label: "Courier Prime",   value: "'Courier Prime', monospace", group: "Mono" },  // Screenplay / document feel
 ];
 
 const defaultSettings: ReaderSettings = {
@@ -32,10 +54,40 @@ const defaultSettings: ReaderSettings = {
   text: themePresets.sepia.text,
 };
 
-type ReaderClientProps = {
-  id: string;
-  source: "gutenberg" | "upload";
-};
+// ─── Cookie helpers ────────────────────────────────────────────────────────────
+
+const COOKIE_KEY = "reader-settings";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
+function setCookie(name: string, value: string, maxAge: number) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; SameSite=Lax`;
+}
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${name}=`));
+  if (!match) return null;
+  return decodeURIComponent(match.split("=").slice(1).join("="));
+}
+
+function loadSettingsFromCookie(): ReaderSettings {
+  try {
+    const raw = getCookie(COOKIE_KEY);
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw) as Partial<ReaderSettings>;
+    return { ...defaultSettings, ...parsed };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+function saveSettingsToCookie(settings: ReaderSettings) {
+  setCookie(COOKIE_KEY, JSON.stringify(settings), COOKIE_MAX_AGE);
+}
+
+// ─── Icons ─────────────────────────────────────────────────────────────────────
 
 function FullscreenEnterIcon() {
   return (
@@ -53,10 +105,66 @@ function FullscreenExitIcon() {
   );
 }
 
+// ─── Google Fonts loader ───────────────────────────────────────────────────────
+// Injects a single <link> for all non-system fonts. Idempotent — safe to mount once.
+const GOOGLE_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?" +
+  [
+    "family=Literata:ital,opsz,wght@0,7..72,300..700;1,7..72,300..700",
+    "family=EB+Garamond:ital,wght@0,400..800;1,400..800",
+    "family=Lora:ital,wght@0,400..700;1,400..700",
+    "family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400;1,700",
+    "family=Crimson+Pro:ital,wght@0,400;0,600;1,400;1,600",
+    "family=Bitter:ital,wght@0,400..700;1,400..700",
+    "family=Libre+Baskerville:ital,wght@0,400;0,700;1,400",
+    "family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700",
+    "family=Manrope:wght@400;500;600",
+    "family=Nunito:ital,wght@0,400;0,600;1,400",
+    "family=Source+Sans+3:ital,wght@0,300..700;1,300..700",
+    "family=Noto+Sans:ital,wght@0,400;0,700;1,400",
+    "family=Courier+Prime:ital,wght@0,400;0,700;1,400",
+  ].join("&") +
+  "&display=swap";
+
+// OpenDyslexic isn't on Google Fonts — load from a CDN
+const OPENDYSLEXIC_HREF =
+  "https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic-regular.min.css";
+
+function GoogleFontsLoader() {
+  useEffect(() => {
+    const ids = ["gf-reader-fonts", "gf-opendyslexic"];
+    const hrefs = [GOOGLE_FONTS_HREF, OPENDYSLEXIC_HREF];
+    ids.forEach((id, i) => {
+      if (document.getElementById(id)) return;
+      const link = document.createElement("link");
+      link.id = id;
+      link.rel = "stylesheet";
+      link.href = hrefs[i];
+      document.head.appendChild(link);
+    });
+  }, []);
+  return null;
+}
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+type ReaderClientProps = {
+  id: string;
+  source: "gutenberg" | "upload";
+};
+
+type PageInfo = {
+  current: number;
+  total: number;
+} | null;
+
+// ─── Component ─────────────────────────────────────────────────────────────────
+
 export default function ReaderClient({ id, source }: ReaderClientProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<any>(null);
   const bookRef = useRef<any>(null);
+
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
@@ -66,24 +174,19 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [loading, setLoading] = useState(true);
   const [toolbarVisible, setToolbarVisible] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pageInfo, setPageInfo] = useState<PageInfo>(null);
 
-  // Load settings from localStorage
+  // ── Load settings from cookie on mount ──────────────────────────────────────
   useEffect(() => {
-    const stored = window.localStorage.getItem("reader-settings");
-    if (stored) {
-      try {
-        setSettings(JSON.parse(stored));
-      } catch {
-        setSettings(defaultSettings);
-      }
-    }
+    setSettings(loadSettingsFromCookie());
   }, []);
 
+  // ── Persist settings to cookie whenever they change ─────────────────────────
   useEffect(() => {
-    window.localStorage.setItem("reader-settings", JSON.stringify(settings));
+    saveSettingsToCookie(settings);
   }, [settings]);
 
-  // Fetch book
+  // ── Fetch book ───────────────────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -125,7 +228,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     return () => { active = false; };
   }, [id, source]);
 
-  // Init epubjs
+  // ── Init epubjs ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!signedUrl || !containerRef.current) return;
 
@@ -147,6 +250,43 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
 
       bookRef.current = book;
       renditionRef.current = rendition;
+
+      // ── Page tracking ────────────────────────────────────────────────────────
+      // epubjs exposes location info via the "relocated" event.
+      // `location.start.displayed` has { page, total } for the current section,
+      // but for a book-wide page count we use the locations object if generated,
+      // or fall back to section-level numbers.
+      rendition.on("relocated", (location: any) => {
+        try {
+          const displayed = location?.start?.displayed;
+          if (displayed) {
+            // Section-relative pages (always available without pre-generating locations)
+            setPageInfo({ current: displayed.page, total: displayed.total });
+          }
+        } catch {
+          // Ignore silently
+        }
+      });
+
+      // Optionally generate book-wide locations for accurate global page numbers.
+      // This is async and may take a moment on large books; we update once ready.
+      book.ready.then(() => {
+        book.locations.generate(1024).then(() => {
+          // Re-subscribe after locations are ready to get global cfi-based pages
+          rendition.on("relocated", (location: any) => {
+            try {
+              const currentPage = book.locations.locationFromCfi(location.start.cfi);
+              const totalPages = book.locations.total;
+              if (typeof currentPage === "number" && totalPages > 0) {
+                setPageInfo({ current: currentPage + 1, total: totalPages });
+              }
+            } catch {
+              // Fall back to section-level numbers already set
+            }
+          });
+        });
+      });
+
       rendition.display();
     };
 
@@ -158,10 +298,11 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       bookRef.current?.destroy();
       renditionRef.current = null;
       bookRef.current = null;
+      setPageInfo(null);
     };
   }, [signedUrl]);
 
-  // Apply theme/font
+  // ── Apply theme/font ─────────────────────────────────────────────────────────
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
@@ -184,7 +325,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     rendition.themes.select("user");
   }, [settings]);
 
-  // Keyboard nav
+  // ── Keyboard nav ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleKeys = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight") renditionRef.current?.next();
@@ -198,7 +339,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     return () => window.removeEventListener("keydown", handleKeys);
   }, []);
 
-  // Fullscreen
+  // ── Fullscreen ───────────────────────────────────────────────────────────────
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -215,6 +356,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  // ── Helpers ──────────────────────────────────────────────────────────────────
   const handleThemeChange = (value: ReaderSettings["theme"]) => {
     const preset = themePresets[value as "light" | "sepia" | "dark"];
     if (preset) {
@@ -232,21 +374,22 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       ? { background: settings.background, text: settings.text }
       : themePresets[settings.theme];
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
+    <>
+    <GoogleFontsLoader />
     <div
       className="fixed inset-0 flex flex-col"
       style={{ background: activeTheme.background, color: activeTheme.text }}
     >
-      {/* Toolbar Wrapper 
-        Handles mouse entering/leaving the top area specifically 
-      */}
-      <div 
+      {/* ── Toolbar Wrapper ──────────────────────────────────────────────────── */}
+      <div
         className="absolute top-0 left-0 right-0 z-20"
         onMouseEnter={() => setToolbarVisible(true)}
         onMouseLeave={() => setToolbarVisible(false)}
       >
-        {/* Invisible catch area: Allows you to hover the very top edge to show the menu. Also useful to tap on mobile. */}
-        <div 
+        {/* Invisible catch area */}
+        <div
           className="absolute top-0 left-0 right-0 h-10"
           style={{ pointerEvents: toolbarVisible ? "none" : "auto" }}
           onClick={() => setToolbarVisible(true)}
@@ -285,7 +428,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
             </button>
           </div>
 
-          {/* Row 2: Reading controls — scrollable on very small screens */}
+          {/* Row 2: Reading controls */}
           <div className="flex items-center gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {/* Theme */}
             <select
@@ -305,15 +448,21 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
               onChange={(e) => setSettings((c) => ({ ...c, fontFamily: e.target.value }))}
               className="shrink-0 rounded-full border border-current/20 bg-transparent px-3 py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
             >
-              {fontOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+              {(["Serif", "Sans", "Accessibility", "Mono"] as const).map((group) => (
+                <optgroup key={group} label={group}>
+                  {fontOptions
+                    .filter((o) => o.group === group)
+                    .map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                </optgroup>
               ))}
             </select>
 
             {/* Divider */}
             <span className="shrink-0 h-4 w-px opacity-20 inline-block" style={{ background: "currentColor" }} />
 
-            {/* Size */}
+            {/* Font size */}
             <div className="flex items-center gap-1.5 opacity-70 shrink-0">
               <span className="text-xs leading-none select-none">A</span>
               <input
@@ -355,7 +504,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         </div>
       </div>
 
-      {/* Reader area */}
+      {/* ── Reader area ──────────────────────────────────────────────────────── */}
       <div className="flex-1 relative overflow-hidden">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -404,7 +553,40 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         )}
       </div>
 
-      {/* Bottom gradient fade */}
+      {/* ── Page number — bottom center ──────────────────────────────────────── */}
+      {pageInfo && canRender && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20 flex justify-center pointer-events-none"
+          style={{
+            paddingBottom: "env(safe-area-inset-bottom, 12px)",
+          }}
+        >
+          <div
+            className="transition-opacity duration-300"
+            style={{
+              // Always slightly visible so readers can glance at their progress;
+              // brightens when the toolbar is open.
+              opacity: toolbarVisible ? 0.7 : 0.3,
+            }}
+          >
+            <span
+              className="inline-block text-xs tabular-nums tracking-widest select-none px-3 py-1.5 rounded-full"
+              style={{
+                background: `${activeTheme.background}cc`,
+                color: activeTheme.text,
+                backdropFilter: "blur(4px)",
+                WebkitBackdropFilter: "blur(4px)",
+                border: `1px solid ${activeTheme.text}18`,
+                marginBottom: "10px",
+              }}
+            >
+              {pageInfo.current} / {pageInfo.total}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bottom gradient fade ─────────────────────────────────────────────── */}
       <div
         className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none transition-opacity duration-300 z-10"
         style={{
@@ -413,5 +595,6 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         }}
       />
     </div>
+    </>
   );
 }
