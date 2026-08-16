@@ -45,7 +45,7 @@ export default function UploadPanel({ onUploaded }: UploadPanelProps) {
       setFile(null);
       setTitle("");
       onUploaded?.();
-    } catch (error) {
+    } catch {
       setMessage("Upload failed.");
     } finally {
       setLoading(false);
@@ -55,7 +55,7 @@ export default function UploadPanel({ onUploaded }: UploadPanelProps) {
   return (
     <form
       onSubmit={handleUpload}
-      className="flex flex-col gap-3 rounded-3xl border border-border bg-white/70 p-4 shadow-[0_20px_50px_-40px_rgba(0,0,0,0.6)] backdrop-blur"
+      className="flex flex-col gap-3 border-l-2 border-primary bg-surface-muted/60 p-4"
     >
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -68,23 +68,27 @@ export default function UploadPanel({ onUploaded }: UploadPanelProps) {
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Optional title"
-        className="w-full rounded-2xl border border-border bg-white/80 px-3 py-2 text-sm"
+        className="w-full border-b border-border bg-transparent px-1 py-2 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none"
       />
       <label className="text-xs font-semibold text-ink">File</label>
       <input
         type="file"
         accept=".epub,application/epub+zip"
         onChange={(event) => setFile(event.target.files?.[0] || null)}
-        className="w-full text-xs"
+        className="w-full text-xs file:mr-3 file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground hover:file:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       />
       <button
         type="submit"
         disabled={loading}
-        className="rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white transition hover:bg-accent/90 disabled:opacity-60"
+        className="self-start bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
         {loading ? "Uploading..." : "Upload EPUB"}
       </button>
-      {message ? <p className="text-xs text-muted">{message}</p> : null}
+      {message ? (
+        <p className="text-xs text-muted" role="status" aria-live="polite">
+          {message}
+        </p>
+      ) : null}
     </form>
   );
 }

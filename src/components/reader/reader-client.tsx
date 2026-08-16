@@ -22,7 +22,7 @@ const themePresets = {
 // All loaded via Google Fonts (see <GoogleFontsLoader> below).
 const fontOptions = [
   // ── Serif — reading workhorses ──────────────────────────────────────────────
-  { label: "Bookerly",        value: "'Bookerly', serif",          group: "Serif" },  // Kindle default (approximated via Literata on web)
+  { label: "Bookerly",        value: "'Bookerly', 'Literata', serif",          group: "Serif" },  // Kindle default (approximated via Literata on web)
   { label: "Literata",        value: "'Literata', serif",          group: "Serif" },  // Google Play Books default
   { label: "Georgia",         value: "Georgia, serif",             group: "Serif" },  // Kindle classic, Apple Books
   { label: "Palatino",        value: "'Palatino Linotype', Palatino, serif", group: "Serif" }, // Kobo, Apple Books
@@ -48,15 +48,79 @@ const fontOptions = [
 
 const defaultSettings: ReaderSettings = {
   fontSize: 18,
-  fontFamily: "Literata, serif",
-  theme: "sepia",
-  background: themePresets.sepia.background,
-  text: themePresets.sepia.text,
+  fontFamily: "'Bookerly', 'Literata', serif",
+  theme: "dark",
+  background: themePresets.dark.background,
+  text: themePresets.dark.text,
 };
+
+// ─── Theme application ───────────────────────────────────────────────────────
+// Extracted so the theme can be applied the moment a rendition exists — not
+// only when settings change (which would miss freshly opened books).
+
+function resolveThemeColors(settings: ReaderSettings) {
+  return settings.theme === "custom"
+    ? { background: settings.background, text: settings.text }
+    : themePresets[settings.theme];
+}
+
+function applyThemeToRendition(rendition: any, settings: ReaderSettings) {
+  if (!rendition?.themes) return;
+  const colors = resolveThemeColors(settings);
+  // Important: epub.js owns the page geometry. It locks <body> to the exact
+  // page width and applies its own responsive insets (≈ width/24 per side,
+  // 20px top/bottom, margin 0). Any extra padding from us — especially on
+  // <html> — pushes that fixed-width body outside the page and clips text,
+  // which caused cut-off / misaligned lines on mobile. So we only set colors
+  // and typography here, and add defensive rules so the book's own styles
+  // can never overflow the page.
+  rendition.themes.register("user", {
+    html: {
+      background: `${colors.background} !important`,
+    },
+    body: {
+      background: `${colors.background} !important`,
+      color: `${colors.text} !important`,
+      "font-family": settings.fontFamily,
+      "font-size": `${settings.fontSize}px`,
+      "line-height": "1.75",
+      "overflow-wrap": "break-word",
+    },
+    // Gutenberg (and many other) EPUBs ship their own hard-coded colors:
+    // white body, white boxes behind links and page numbers, blue/purple/
+    // gray text. Those leak through and make pages look "light" no matter
+    // which theme is selected. Neutralize every element's own colors so the
+    // chosen theme is consistent on every page (body/html keep the colors
+    // above; images are unaffected).
+    "*:not(body):not(html)": {
+      color: "inherit !important",
+      "background-color": "transparent !important",
+    },
+    // Books often strip link underlines — restore the affordance.
+    "a, a:link, a:visited, a:hover, a:active": {
+      "text-decoration": "underline !important",
+    },
+    // Some EPUBs ship fixed-width blocks and large images; cap everything
+    // to the page width so nothing gets cut off.
+    "img, svg, video, table, div, p, ul, ol, blockquote, pre": {
+      "max-width": "100% !important",
+    },
+    img: {
+      height: "auto",
+    },
+  });
+  rendition.themes.select("user");
+  // Belt and suspenders: inline overrides beat ANY book stylesheet (even
+  // !important ones) and epub.js automatically re-applies them to every
+  // newly rendered page, so the base page colors can never fall back to the
+  // book's defaults.
+  rendition.themes.override("background-color", colors.background, true);
+  rendition.themes.override("color", colors.text, true);
+}
 
 // ─── Cookie helpers ────────────────────────────────────────────────────────────
 
-const COOKIE_KEY = "reader-settings";
+const COOKIE_KEY = "reader-settings-v2"; // bumped so existing browsers pick up the new defaults (dark + Bookerly)
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
 function setCookie(name: string, value: string, maxAge: number) {
@@ -201,6 +265,14 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const bookRef = useRef<any>(null);
 
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
+  // True once settings have been read from the cookie — prevents flashing the
+  // default theme and stops the save effect from clobbering the cookie.
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
+  // True while a live epub.js rendition exists — lets the theme effect run as
+  // soon as the rendition is ready, not only when settings change.
+  const [renditionReady, setRenditionReady] = useState(false);
+  // Always-current settings, readable from async callbacks (rendition init).
+  const settingsRef = useRef(settings);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [fallbackKind, setFallbackKind] = useState<"html" | "text" | null>(null);
@@ -224,12 +296,17 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   // ── Load settings from cookie on mount ──────────────────────────────────────
   useEffect(() => {
     setSettings(loadSettingsFromCookie());
+    setSettingsHydrated(true);
   }, []);
 
   // ── Persist settings to cookie whenever they change ─────────────────────────
+  // Gated on settingsHydrated so the very first run (which still holds the
+  // default settings) can't overwrite the saved cookie before it's loaded.
   useEffect(() => {
+    settingsRef.current = settings;
+    if (!settingsHydrated) return;
     saveSettingsToCookie(settings);
-  }, [settings]);
+  }, [settings, settingsHydrated]);
 
   // ── Fetch book ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -296,6 +373,11 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       bookRef.current = book;
       renditionRef.current = rendition;
 
+      // Apply the saved theme *before* the first page renders. epub.js then
+      // injects it into every page iframe automatically, so all pages match.
+      applyThemeToRendition(rendition, settingsRef.current);
+      setRenditionReady(true);
+
       // ── Page tracking (section-level, immediate) ────────────────────────────
       rendition.on("relocated", (location: any) => {
         try {
@@ -354,6 +436,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       bookRef.current?.destroy();
       renditionRef.current = null;
       bookRef.current = null;
+      setRenditionReady(false);
       setPageInfo(null);
       // Clear timers on unmount
       if (saveProgressThrottleRef.current) clearTimeout(saveProgressThrottleRef.current);
@@ -364,27 +447,15 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   }, [signedUrl, id]);
 
   // ── Apply theme/font ─────────────────────────────────────────────────────────
+  // Runs whenever settings change AND again as soon as a rendition becomes
+  // ready. Previously this only depended on `settings`, so on a freshly opened
+  // book it ran before the rendition existed, bailed out, and never ran again —
+  // the book then rendered in its own (usually light) styles even though the
+  // menu showed "Dark".
   useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    const theme =
-      settings.theme === "custom"
-        ? { background: settings.background, text: settings.text }
-        : themePresets[settings.theme];
-
-    rendition.themes.register("user", {
-      body: {
-        background: theme.background,
-        color: theme.text,
-        "font-family": settings.fontFamily,
-        "font-size": `${settings.fontSize}px`,
-        "line-height": "1.75",
-        "padding": "0 2em",
-      },
-    });
-    rendition.themes.select("user");
-  }, [settings]);
+    if (!renditionReady) return;
+    applyThemeToRendition(renditionRef.current, settings);
+  }, [settings, renditionReady]);
 
   // ── Keyboard nav ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -477,10 +548,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const canRender = Boolean(signedUrl);
   const fallbackLabel = fallbackKind === "text" ? "Open text version" : "Open HTML version";
 
-  const activeTheme =
-    settings.theme === "custom"
-      ? { background: settings.background, text: settings.text }
-      : themePresets[settings.theme];
+  const activeTheme = resolveThemeColors(settings);
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -488,7 +556,13 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     <GoogleFontsLoader />
     <div
       className="fixed inset-0 flex flex-col"
-      style={{ background: activeTheme.background, color: activeTheme.text }}
+      style={{
+        background: activeTheme.background,
+        color: activeTheme.text,
+        // Hide the shell for the one frame before the saved settings are read
+        // from the cookie, so it never flashes in the default theme.
+        opacity: settingsHydrated ? 1 : 0,
+      }}
     >
       {/* ── Toolbar Wrapper ──────────────────────────────────────────────────── */}
       <div
@@ -821,7 +895,6 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         </div>
       )}
 
-      {/* ── Bottom gradient fade ─────────────────────────────────────────────── */}
       <div
         className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none transition-opacity duration-300 z-10"
         style={{

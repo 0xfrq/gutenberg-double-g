@@ -6,7 +6,12 @@
   --muted: #7a6f63;
   --accent: #b45309;
   --accent-2: #0f766e;
-  --border: #e5d7c2;
+  --border: #d8cbbb;
+  --surface: #fbf8f2;
+  --surface-muted: #f2ebe1;
+  --primary: #9b3d22;
+  --primary-hover: #6f2818;
+  --primary-foreground: #fffaf4;
 }
 
 @theme inline {
@@ -16,6 +21,11 @@
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-border: var(--border);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
   --font-sans: var(--font-manrope);
   --font-serif: var(--font-literata);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent as ReactFormEvent } from "react";
 import BookCard, { BookCardData } from "@/components/book-card";
 import UploadPanel from "@/components/upload-panel";
 
@@ -20,6 +20,10 @@ type ShelfResponse = {
 type RecommendationResponse = {
   seed: string;
   results: BookCardData[];
+};
+
+type GutenbergResponse = {
+  results?: BookCardData[];
 };
 
 type CollectionsResponse = {
@@ -52,13 +56,13 @@ function SectionHeader({
   count?: number;
 }) {
   return (
-    <div className="flex items-baseline gap-3 border-b border-amber-200/60 pb-3">
-      <h2 className="text-base font-semibold text-amber-950">{title}</h2>
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-[#d8cbbb] pb-3">
+      <h2 className="font-serif text-xl font-normal text-[#241c16]">{title}</h2>
       {count !== undefined && (
-        <span className="text-xs tabular-nums text-amber-600">{count}</span>
+        <span className="text-xs tabular-nums text-[#8a7766]">{count}</span>
       )}
       {subtitle && (
-        <span className="ml-auto text-xs uppercase tracking-widest text-amber-500">
+        <span className="ml-auto text-[10px] uppercase tracking-[0.18em] text-[#8a7766]">
           {subtitle}
         </span>
       )}
@@ -66,17 +70,34 @@ function SectionHeader({
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({
+  message,
+  action,
+  onAction,
+}: {
+  message: string;
+  action?: string;
+  onAction?: () => void;
+}) {
   return (
-    <p className="col-span-full py-6 text-center text-sm text-amber-700/60">
-      {message}
-    </p>
+    <div className="col-span-full flex flex-col items-center gap-3 border border-dashed border-[#d8cbbb] px-6 py-10 text-center">
+      <p className="max-w-sm text-sm text-[#8a7766]">{message}</p>
+      {action && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="border-b border-[#9b3d22] pb-0.5 text-xs font-semibold text-[#9b3d22] transition-colors hover:border-[#6f2818] hover:text-[#6f2818] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#9b3d22]"
+        >
+          {action}
+        </button>
+      )}
+    </div>
   );
 }
 
 function BookGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+    <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2">{children}</div>
   );
 }
 
@@ -98,6 +119,7 @@ export default function Home() {
   const [activeCollectionId, setActiveCollectionId] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
   const [activeTab, setActiveTab] = useState<MainTab>("discover");
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const isSearching = query.trim().length > 0;
 
@@ -163,7 +185,7 @@ export default function Home() {
       const encoded = encodeURIComponent(value);
       const [libraryData, gutenbergData] = await Promise.all([
         fetchJson<LibraryResponse>(`/api/library/books?q=${encoded}`),
-        fetchJson<any>(`/api/gutenberg/books${value ? `?search=${encoded}` : ""}`),
+        fetchJson<GutenbergResponse>(`/api/gutenberg/books${value ? `?search=${encoded}` : ""}`),
       ]);
       setLibraryBooks(libraryData.cached || []);
       const uploadCards = (libraryData.uploads || []).map((upload) => ({
@@ -186,17 +208,21 @@ export default function Home() {
   }, [activeCollectionId, loadCollectionItems, loadCollections, loadFavorites, loadShelf, loadUploads]);
 
   useEffect(() => {
-    runSearch("");
-    loadRecommended();
+    const timer = window.setTimeout(() => {
+      void runSearch("");
+      void loadRecommended();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [runSearch, loadRecommended]);
 
-  useEffect(() => { refreshPanels(); }, [refreshPanels]);
-  useEffect(() => { loadShelf(); }, [activeShelf, loadShelf]);
   useEffect(() => {
-    if (activeCollectionId) loadCollectionItems(activeCollectionId);
-  }, [activeCollectionId, loadCollectionItems]);
+    const timer = window.setTimeout(() => {
+      void refreshPanels();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshPanels]);
 
-  const handleSearchSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSearchSubmit = async (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = draftQuery.trim();
     setQuery(trimmed);
@@ -231,65 +257,64 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f8f1e7_20%,#f4ece1_60%,#efe2d0_100%)] text-amber-950">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="relative overflow-hidden">
-        <div className="pointer-events-none absolute -right-32 top-10 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl" />
-        <div className="pointer-events-none absolute -left-16 top-40 h-56 w-56 rounded-full bg-teal-200/40 blur-3xl" />
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-14">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-700">
-            Your private Gutenberg shelf
-          </p>
-          <h1 className="text-4xl font-semibold text-amber-950 md:text-5xl">
-            DoubleG Reader
-          </h1>
+    <div className="min-h-screen bg-paper text-ink">
+      <header className="border-b border-border bg-paper">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-7 px-6 py-9 md:py-11">
+          <div className="flex items-end justify-between gap-6">
+            <div>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
+                Your private Gutenberg shelf
+              </p>
+              <h1 className="font-serif text-4xl font-normal tracking-tight text-ink md:text-5xl">
+                DoubleG Reader
+              </h1>
+            </div>
+            <span className="hidden pb-1 text-xs text-muted sm:block">Read well. Keep it close.</span>
+          </div>
 
-          {/* Search */}
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex w-full max-w-2xl gap-2 rounded-3xl border border-amber-200/70 bg-white/70 p-2 shadow-sm backdrop-blur"
-          >
+          <form onSubmit={handleSearchSubmit} className="flex w-full gap-3 border-b border-ink/35 pb-3">
             <input
+              ref={searchRef}
               value={draftQuery}
               onChange={(e) => setDraftQuery(e.target.value)}
-              placeholder="Search by title, author, or subject…"
-              className="flex-1 rounded-2xl bg-transparent px-4 py-2.5 text-sm text-amber-900 placeholder:text-amber-800 focus:outline-none"
+              placeholder="Search title, author, or subject"
+              className="min-w-0 flex-1 bg-transparent text-base text-ink placeholder:text-muted focus:outline-none"
             />
             {query && (
               <button
                 type="button"
                 onClick={handleClearSearch}
-                className="rounded-2xl px-3 py-2.5 text-xs text-amber-600 hover:text-amber-900 transition"
+                className="text-xs text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
               >
                 Clear
               </button>
             )}
             <button
               type="submit"
-              className="rounded-2xl bg-amber-900 px-5 py-2.5 text-sm font-semibold text-amber-50 transition hover:bg-amber-800"
+              disabled={loading}
+              className="shrink-0 text-xs font-semibold text-primary transition-colors hover:text-primary-hover disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
-              {loading ? "…" : "Search"}
+              {loading ? "Searching…" : "Search ↗"}
             </button>
           </form>
 
-          {/* Main tabs — hidden when actively searching */}
           {!isSearching && (
-            <div className="flex gap-1">
+            <nav className="flex flex-wrap gap-6" aria-label="Library sections">
               {mainTabs.map((tab) => (
                 <button
                   key={tab.value}
                   type="button"
                   onClick={() => setActiveTab(tab.value)}
-                  className={`rounded-full px-5 py-2 text-sm font-medium transition ${
+                  className={`border-b-2 pb-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary ${
                     activeTab === tab.value
-                      ? "bg-amber-900 text-amber-50 shadow-sm"
-                      : "text-amber-800 hover:bg-amber-900/10"
+                      ? "border-primary font-semibold text-ink"
+                      : "border-transparent text-muted hover:border-border hover:text-ink"
                   }`}
                 >
                   {tab.label}
                 </button>
               ))}
-            </div>
+            </nav>
           )}
         </div>
       </header>
@@ -299,10 +324,10 @@ export default function Home() {
         {isSearching ? (
           <div className="flex flex-col gap-10">
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-amber-950">
+              <h2 className="font-serif text-2xl font-normal text-ink">
                 Results for &ldquo;{query}&rdquo;
               </h2>
-              <span className="text-sm text-amber-600">
+              <span className="text-sm text-muted">
                 {gutenbergBooks.length + libraryBooks.length + uploads.length} found
               </span>
             </div>
@@ -341,7 +366,15 @@ export default function Home() {
                       <BookCard key={book.id} book={book} source="gutenberg"
                         activeCollectionId={activeCollectionId} onRefresh={refreshPanels} />
                     ))
-                  : <EmptyState message="No Gutenberg results found." />
+                  : <EmptyState
+                      message="No Gutenberg results found."
+                      action="Browse popular titles"
+                      onAction={() => {
+                        setQuery("");
+                        setDraftQuery("");
+                        setActiveTab("discover");
+                      }}
+                    />
                 }
               </BookGrid>
             </div>
@@ -359,7 +392,11 @@ export default function Home() {
                       <BookCard key={book.id} book={book} source="gutenberg"
                         activeCollectionId={activeCollectionId} onRefresh={refreshPanels} />
                     ))
-                  : <EmptyState message="Favorite some books to get recommendations." />
+                  : <EmptyState
+                      message="Favorite a book and recommendations will appear here."
+                      action="Browse Gutenberg"
+                      onAction={() => searchRef.current?.focus()}
+                    />
                 }
               </BookGrid>
             </div>
@@ -381,8 +418,8 @@ export default function Home() {
           <div className="grid gap-10 lg:grid-cols-[260px_1fr]">
             {/* Sidebar: shelf tabs + upload */}
             <aside className="flex flex-col gap-6">
-              <div className="rounded-2xl border border-amber-200/60 bg-white/70 p-4 shadow-sm">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-700">
+              <div className="border-l-2 border-primary bg-surface-muted/60 p-4">
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
                   Shelf
                 </p>
                 <div className="flex flex-col gap-1">
@@ -393,8 +430,8 @@ export default function Home() {
                       onClick={() => setActiveShelf(tab.value)}
                       className={`rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
                         activeShelf === tab.value
-                          ? "bg-amber-900 text-amber-50"
-                          : "text-amber-800 hover:bg-amber-100"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-ink/80 hover:bg-surface-muted"
                       }`}
                     >
                       {tab.label}
@@ -419,7 +456,11 @@ export default function Home() {
                         <BookCard key={book.id} book={book} source={resolveSource(book)}
                           activeCollectionId={activeCollectionId} onRefresh={refreshPanels} />
                       ))
-                    : <EmptyState message="Nothing on this shelf yet." />
+                    : <EmptyState
+                        message="Nothing on this shelf yet."
+                        action="Search Gutenberg"
+                        onAction={() => searchRef.current?.focus()}
+                      />
                   }
                 </BookGrid>
               </div>
@@ -465,8 +506,8 @@ export default function Home() {
           /* ── COLLECTIONS TAB ───────────────────────────────────────────── */
           <div className="grid gap-10 lg:grid-cols-[260px_1fr]">
             <aside className="flex flex-col gap-4">
-              <div className="rounded-2xl border border-amber-200/60 bg-white/70 p-4 shadow-sm">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-700">
+              <div className="border-l-2 border-primary bg-surface-muted/60 p-4">
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
                   Collections
                 </p>
                 <div className="flex flex-col gap-1">
@@ -477,34 +518,34 @@ export default function Home() {
                       onClick={() => setActiveCollectionId(col.id)}
                       className={`flex items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
                         activeCollectionId === col.id
-                          ? "bg-amber-900 text-amber-50"
-                          : "text-amber-800 hover:bg-amber-100"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-ink/80 hover:bg-surface-muted"
                       }`}
                     >
                       <span className="font-medium">{col.name}</span>
-                      <span className={`text-xs tabular-nums ${activeCollectionId === col.id ? "text-amber-200" : "text-amber-500"}`}>
+                      <span className={`text-xs tabular-nums ${activeCollectionId === col.id ? "text-primary-foreground/70" : "text-muted"}`}>
                         {col.count}
                       </span>
                     </button>
                   ))}
                   {collections.length === 0 && (
-                    <p className="py-2 text-xs text-amber-600">No collections yet.</p>
+                    <p className="py-2 text-xs text-muted">No collections yet.</p>
                   )}
                 </div>
 
                 {/* Create new collection */}
-                <div className="mt-4 flex gap-2 border-t border-amber-100 pt-4">
+                <div className="mt-4 flex gap-2 border-t border-border pt-4">
                   <input
                     value={newCollectionName}
                     onChange={(e) => setNewCollectionName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") handleCreateCollection(); }}
                     placeholder="New collection…"
-                    className="flex-1 rounded-xl border border-amber-200/70 bg-white/80 px-3 py-2 text-sm"
+                    className="min-w-0 flex-1 border-b border-border bg-transparent px-1 py-2 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={handleCreateCollection}
-                    className="rounded-xl bg-amber-900 px-3 py-2 text-sm font-semibold text-amber-50"
+                    className="shrink-0 bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
                     Add
                   </button>

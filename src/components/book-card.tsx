@@ -36,6 +36,7 @@ export default function BookCard({
   onRefresh,
 }: BookCardProps) {
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const authors = useMemo(() => {
     if (book.authors && book.authors.length > 0) {
       return book.authors.map((author) => author.name).join(", ");
@@ -53,123 +54,137 @@ export default function BookCard({
   const readHref =
     source === "upload" ? `/reader/${book.id}?source=upload` : `/reader/${book.id}`;
 
-  const handleFavorite = async () => {
+  const saveAction = async (url: string, body: object, success: string) => {
     setBusy(true);
-    await fetch("/api/library/favorites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, itemId: book.id }),
-    });
-    onRefresh?.();
-    setBusy(false);
+    setStatus(null);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Could not save change");
+      }
+      setStatus(success);
+      onRefresh?.();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save change");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleShelfChange = async (event: ChangeEvent<HTMLSelectElement>) => {
-    const shelf = event.target.value;
-    if (!shelf) {
-      return;
-    }
+  const handleFavorite = () =>
+    saveAction(
+      "/api/library/favorites",
+      { source, itemId: book.id },
+      "Saved to favorites"
+    );
 
-    setBusy(true);
-    await fetch("/api/library/shelves", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shelf, source, itemId: book.id }),
-    });
-    onRefresh?.();
-    setBusy(false);
+  const handleShelfChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const shelf = event.target.value;
+    if (!shelf) return;
+    void saveAction(
+      "/api/library/shelves",
+      { shelf, source, itemId: book.id },
+      `Moved to ${shelves.find((item) => item.value === shelf)?.label || "shelf"}`
+    );
     event.target.value = "";
   };
 
-  const handleCollectionAdd = async () => {
-    if (!activeCollectionId) {
-      return;
-    }
-
-    setBusy(true);
-    await fetch("/api/library/collections/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        collectionId: activeCollectionId,
-        source,
-        itemId: book.id,
-      }),
-    });
-    onRefresh?.();
-    setBusy(false);
+  const handleCollectionAdd = () => {
+    if (!activeCollectionId) return;
+    void saveAction(
+      "/api/library/collections/items",
+      { collectionId: activeCollectionId, source, itemId: book.id },
+      "Added to collection"
+    );
   };
 
   return (
-    <div className="group flex h-full flex-col overflow-hidden rounded-3xl border border-amber-100/60 bg-white/70 p-4 shadow-sm backdrop-blur">
-      <div className="flex items-start gap-4">
-        <div className="h-24 w-16 shrink-0 overflow-hidden rounded-xl bg-amber-100/70">
+    <article className="group flex h-full flex-col border-b border-border pb-5">
+      <div className="flex items-start gap-5">
+        <div className="h-36 w-24 shrink-0 overflow-hidden bg-surface-muted shadow-[4px_4px_0_rgba(36,28,22,0.08)]">
           {book.cover_image ? (
             <img
               src={book.cover_image}
               alt={`${book.title} cover`}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-amber-200 via-amber-100 to-transparent text-xs font-semibold text-amber-800">
+            <div className="flex h-full w-full items-center justify-center bg-surface-muted px-2 text-center text-xs font-semibold text-muted">
               No cover
             </div>
           )}
         </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <span className="rounded-full bg-amber-200/70 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-amber-900">
-              {source === "upload" ? "Upload" : "Gutenberg"}
+        <div className="min-w-0 flex-1">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+              {source === "upload" ? "Your upload" : "Gutenberg"}
             </span>
             {book.download_count ? (
-              <span className="text-xs text-amber-900/70">
+              <span className="text-xs text-muted">
                 {book.download_count.toLocaleString()} reads
               </span>
             ) : null}
           </div>
-          <h3 className="mt-3 text-lg font-semibold text-amber-950">
+          <h3 className="font-serif text-xl leading-tight text-ink">
             {book.title}
           </h3>
-          <p className="text-sm text-amber-900/80">{authors}</p>
+          <p className="mt-1 text-sm text-muted">{authors}</p>
         </div>
       </div>
-      <p className="mt-3 text-sm text-amber-900/70">{summary}</p>
-      <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+      <p className="mt-4 line-clamp-3 text-sm leading-6 text-muted">{summary}</p>
+      <div className="mt-auto flex items-center gap-4 pt-5">
         <Link
           href={readHref}
-          className="rounded-full bg-amber-900 px-4 py-2 text-sm font-semibold text-amber-50 transition hover:bg-amber-800"
+          className="bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           Read
         </Link>
-        <button
-          type="button"
-          onClick={handleFavorite}
-          disabled={busy}
-          className="rounded-full border border-amber-300/80 px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-        >
-          Favorite
-        </button>
-        <select
-          className="rounded-full border border-amber-300/80 bg-white/70 px-3 py-2 text-sm text-amber-900"
-          onChange={handleShelfChange}
-          defaultValue=""
-          disabled={busy}
-        >
-          {shelves.map((shelf) => (
-            <option key={shelf.value} value={shelf.value}>
-              {shelf.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={handleCollectionAdd}
-          disabled={busy || !activeCollectionId}
-          className="rounded-full border border-amber-300/80 px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-40"
-        >
-          Add to collection
-        </button>
+        <details className="relative">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+            More actions
+          </summary>
+          <div className="absolute bottom-8 left-0 z-10 flex min-w-44 flex-col gap-2 border border-border bg-surface p-3 shadow-lg">
+            <button
+              type="button"
+              onClick={handleFavorite}
+              disabled={busy}
+              className="text-left text-xs text-ink transition-colors hover:text-primary disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              Favorite
+            </button>
+            <label className="flex items-center justify-between gap-3 text-xs text-ink">
+              Shelf
+              <select
+                onChange={handleShelfChange}
+                defaultValue=""
+                disabled={busy}
+                className="border-b border-border bg-transparent py-1 text-xs focus:border-primary focus:outline-none"
+              >
+                {shelves.map((shelf) => (
+                  <option key={shelf.value} value={shelf.value}>
+                    {shelf.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={handleCollectionAdd}
+              disabled={busy || !activeCollectionId}
+              className="text-left text-xs text-ink transition-colors hover:text-primary disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              Add to collection
+            </button>
+          </div>
+        </details>
+        {busy && <span className="text-xs text-muted" role="status">Saving…</span>}
+        {!busy && status && <span className="text-xs text-muted" role="status">{status}</span>}
       </div>
-    </div>
+    </article>
   );
 }
