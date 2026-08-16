@@ -44,7 +44,7 @@ const shelfTabs = [
   { value: "finished", label: "Finished" },
 ];
 
-type MainTab = "discover" | "library" | "collections";
+type MainTab = "discover" | "library" | "collections" | "uploads";
 
 function SectionHeader({
   title,
@@ -254,6 +254,7 @@ export default function Home() {
     { value: "discover", label: "Discover" },
     { value: "library", label: "My Library" },
     { value: "collections", label: "Collections" },
+    { value: "uploads", label: "My Uploads" },
   ];
 
   return (
@@ -499,6 +500,32 @@ export default function Home() {
                   </BookGrid>
                 </div>
               )}
+            </div>
+          </div>
+
+        ) : activeTab === "uploads" ? (
+          /* ── MY UPLOADS TAB ─────────────────────────────────────────────── */
+          <div className="grid gap-10 lg:grid-cols-[260px_1fr]">
+            {/* Sidebar: upload form */}
+            <aside className="flex flex-col gap-6">
+              <UploadPanel onUploaded={refreshPanels} />
+            </aside>
+
+            <div className="flex flex-col gap-4">
+              <SectionHeader
+                title="My Uploads"
+                subtitle="Your EPUBs"
+                count={uploads.length}
+              />
+              <BookGrid>
+                {uploads.length > 0
+                  ? uploads.map((upload) => (
+                      <BookCard key={upload.id} book={upload} source="upload"
+                        activeCollectionId={activeCollectionId} onRefresh={refreshPanels} />
+                    ))
+                  : <EmptyState message="Upload an EPUB on the left and it will appear here." />
+                }
+              </BookGrid>
             </div>
           </div>
 
