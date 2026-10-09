@@ -1,0 +1,109 @@
+/* Hallmark · genre: editorial (soft) · macrostructure: Ecosystem Index (app shell) · design-system: design.md · designed-as-app
+ * theme: custom · vibe: "library lamp, soft paper, quiet evenings" · paper: oklch(97.4% 0.009 85) · accent: oklch(49% 0.085 160)
+ * display: Fraunces (SOFT 100) · body: Manrope · axes: light / roman-serif / chromatic-green ~160°
+ * nav: bottom tab bar (phone) + inline search pill · footer: Ft2 inline single line · enrichment: generated dog-ear covers (Tier A CSS)
+ * studied: no · context: inferred (user: "soft, simple, reader friendly", phone-first e-reader)
+ * pre-emit critique: P4 H4 E4 S4 R5 V4
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces — warm paper, tinted toward the accent family */
+  --paper: oklch(97.4% 0.009 85);
+  --paper-2: oklch(99.2% 0.004 85); /* raised: sheets, cards */
+  --paper-3: oklch(94.6% 0.011 85); /* sunken: inputs, hover */
+  --rule: oklch(90% 0.012 80);
+  --rule-2: oklch(83% 0.014 80);
+
+  /* Text */
+  --muted: oklch(51% 0.016 70);
+  --ink-2: oklch(38% 0.016 65);
+  --ink: oklch(24% 0.016 60);
+
+  /* Accent — library-lamp green */
+  --accent: oklch(49% 0.085 160);
+  --accent-hover: oklch(43% 0.085 160);
+  --accent-soft: oklch(93.5% 0.03 160);
+  --accent-ink: oklch(98.6% 0.006 85);
+  --accent-fold: oklch(78% 0.07 160);
+  --focus: oklch(55% 0.13 160);
+  --danger: oklch(52% 0.15 28);
+
+  /* Overlays */
+  --scrim: oklch(22% 0.02 60 / 0.38);
+  --shadow: oklch(30% 0.03 60 / 0.14);
+
+  /* Generated covers — five soft bindings */
+  --cover-1-bg: oklch(89% 0.045 160);
+  --cover-1-ink: oklch(32% 0.05 160);
+  --cover-2-bg: oklch(90% 0.045 70);
+  --cover-2-ink: oklch(34% 0.05 55);
+  --cover-3-bg: oklch(89% 0.035 245);
+  --cover-3-ink: oklch(32% 0.05 250);
+  --cover-4-bg: oklch(89% 0.04 20);
+  --cover-4-ink: oklch(34% 0.06 20);
+  --cover-5-bg: oklch(89% 0.035 300);
+  --cover-5-ink: oklch(32% 0.05 300);
+
+  /* Type */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-body: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+
+  /* Shape */
+  --round-cover: 6px;
+  --round-card: 20px;
+  --round-sheet: 28px;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out-expo: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 380ms;
+
+  /* Layers */
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --paper: oklch(19% 0.01 70);
+    --paper-2: oklch(23% 0.012 70);
+    --paper-3: oklch(26.5% 0.012 70);
+    --rule: oklch(31% 0.012 70);
+    --rule-2: oklch(38% 0.014 70);
+
+    --muted: oklch(70% 0.014 75);
+    --ink-2: oklch(82% 0.012 80);
+    --ink: oklch(93% 0.01 85);
+
+    --accent: oklch(76% 0.09 160);
+    --accent-hover: oklch(81% 0.09 160);
+    --accent-soft: oklch(31% 0.035 160);
+    --accent-ink: oklch(19% 0.02 160);
+    --accent-fold: oklch(52% 0.07 160);
+    --focus: oklch(78% 0.12 160);
+    --danger: oklch(72% 0.13 28);
+
+    --scrim: oklch(8% 0.01 60 / 0.6);
+    --shadow: oklch(5% 0.01 60 / 0.5);
+
+    --cover-1-bg: oklch(36% 0.045 160);
+    --cover-1-ink: oklch(91% 0.03 160);
+    --cover-2-bg: oklch(37% 0.045 65);
+    --cover-2-ink: oklch(92% 0.03 70);
+    --cover-3-bg: oklch(35% 0.04 250);
+    --cover-3-ink: oklch(91% 0.025 245);
+    --cover-4-bg: oklch(36% 0.05 20);
+    --cover-4-ink: oklch(92% 0.03 20);
+    --cover-5-bg: oklch(35% 0.04 300);
+    --cover-5-ink: oklch(91% 0.025 300);
+  }
+}

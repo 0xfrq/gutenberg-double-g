@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import ReaderClient from "@/components/reader/reader-client";
+
+export const metadata: Metadata = {
+  title: "Reading",
+};
 
 type ReaderPageProps = {
   params: Promise<{ id: string }>;

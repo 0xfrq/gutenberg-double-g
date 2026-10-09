@@ -1,45 +1,341 @@
 @import "tailwindcss";
-
-:root {
-  --paper: #f7f1e6;
-  --ink: #201810;
-  --muted: #7a6f63;
-  --accent: #b45309;
-  --accent-2: #0f766e;
-  --border: #d8cbbb;
-  --surface: #fbf8f2;
-  --surface-muted: #f2ebe1;
-  --primary: #9b3d22;
-  --primary-hover: #6f2818;
-  --primary-foreground: #fffaf4;
-}
+@import "./tokens.css";
 
 @theme inline {
   --color-paper: var(--paper);
-  --color-ink: var(--ink);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
   --color-muted: var(--muted);
+  --color-ink-2: var(--ink-2);
+  --color-ink: var(--ink);
   --color-accent: var(--accent);
-  --color-accent-2: var(--accent-2);
-  --color-border: var(--border);
-  --color-surface: var(--surface);
-  --color-surface-muted: var(--surface-muted);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-foreground: var(--primary-foreground);
-  --font-sans: var(--font-manrope);
-  --font-serif: var(--font-literata);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-fold: var(--accent-fold);
+  --color-danger: var(--danger);
+  --color-scrim: var(--scrim);
+
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-display);
+
+  --text-title: clamp(2rem, 1.55rem + 1.6vw, 2.75rem);
+  --text-title--line-height: 1.08;
+
+  --radius-cover: var(--round-cover);
+  --radius-card: var(--round-card);
+  --radius-sheet: var(--round-sheet);
+
+  --shadow-cover: 0 6px 16px -8px var(--shadow);
+  --shadow-sheet: 0 -10px 40px -16px var(--shadow);
+
+  --ease-out: var(--ease-out-expo);
+  --ease-in: var(--ease-in-expo);
+  --ease-in-out: var(--ease-in-out-expo);
 }
 
-* {
-  box-sizing: border-box;
+@utility transition-soft {
+  transition-property: color, background-color, border-color, opacity, transform, box-shadow;
+  transition-timing-function: var(--ease-out-expo);
+  transition-duration: var(--dur-short);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+
+html {
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
 }
 
 body {
+  overflow-x: clip;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-family: var(--font-body);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fraunces has a SOFT axis — the brand reads rounded, never sharp. */
+.font-serif {
+  font-variation-settings: "SOFT" 100, "WONK" 0;
 }
 
 ::selection {
-  background: rgba(180, 83, 9, 0.2);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  appearance: none;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  appearance: textfield;
+}
+
+/* ── Generated covers ──────────────────────────────────────────────────── */
+
+.cover-art {
+  background: var(--cover-bg);
+  color: var(--cover-ink);
+  padding: 11% 10% 10%;
+}
+
+/* The dog-ear: the corner folds down and shows the paper underneath. */
+.cover-fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 17%;
+  aspect-ratio: 1;
+  background: linear-gradient(
+    225deg,
+    var(--paper-2) 50%,
+    color-mix(in oklch, var(--cover-bg) 76%, var(--cover-ink)) 50%
+  );
+  border-bottom-left-radius: 3px;
+}
+
+/* ── Sheets ────────────────────────────────────────────────────────────── */
+
+.sheet-scrim,
+.fade-in {
+  animation: fade-in var(--dur-long) var(--ease-out-expo) both;
+}
+
+.sheet-panel {
+  animation: sheet-up var(--dur-long) var(--ease-out-expo) both;
+}
+
+[data-state="closing"] .sheet-scrim {
+  animation: fade-out 180ms var(--ease-in-expo) both;
+}
+
+[data-state="closing"] .sheet-panel {
+  animation: sheet-down 180ms var(--ease-in-expo) both;
+}
+
+@media (min-width: 40rem) {
+  .sheet-panel {
+    animation-name: sheet-rise;
+  }
+
+  [data-state="closing"] .sheet-panel {
+    animation-name: sheet-sink;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+
+@keyframes sheet-sink {
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+/* ── Reader chrome ─────────────────────────────────────────────────────── */
+/* Every reader surface derives from the chosen reading theme (--r-bg / --r-fg),
+   so the controls always match the page the person is reading. */
+
+.reader {
+  --r-surface: color-mix(in srgb, var(--r-fg) 6%, var(--r-bg));
+  --r-surface-2: color-mix(in srgb, var(--r-fg) 11%, var(--r-bg));
+  --r-line: color-mix(in srgb, var(--r-fg) 14%, var(--r-bg));
+  --r-muted: color-mix(in srgb, var(--r-fg) 64%, var(--r-bg));
+  --r-faint: color-mix(in srgb, var(--r-fg) 42%, var(--r-bg));
+  background: var(--r-bg);
+  color: var(--r-fg);
+}
+
+.reader :focus-visible {
+  outline-color: var(--r-fg);
+}
+
+/* Components layer, so utilities like size-10 can still resize it. */
+@layer components {
+  .reader-icon-btn {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    color: var(--r-fg);
+    transition: background-color var(--dur-short) var(--ease-out-expo), transform var(--dur-micro) var(--ease-out-expo);
+  }
+
+  @media (hover: hover) {
+    .reader-icon-btn:hover {
+      background: var(--r-surface);
+    }
+  }
+
+  .reader-icon-btn:active {
+    transform: scale(0.94);
+  }
+
+  .reader-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.reader-range {
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.reader-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--r-fg) var(--range-fill, 0%),
+    var(--r-line) var(--range-fill, 0%)
+  );
+}
+
+.reader-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: 999px;
+  background: var(--r-fg);
+  border: 4px solid var(--r-bg);
+  box-shadow: 0 0 0 1px var(--r-line);
+}
+
+.reader-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--r-line);
+}
+
+.reader-range::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--r-fg);
+}
+
+.reader-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--r-fg);
+  border: 4px solid var(--r-bg);
+  box-shadow: 0 0 0 1px var(--r-line);
+}
+
+.reader-range:focus-visible {
+  outline-offset: 4px;
+}
+
+.reader-color {
+  appearance: none;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.reader-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.reader-color::-webkit-color-swatch {
+  border: 1px solid var(--r-line);
+  border-radius: 999px;
+}
+
+.reader-color::-moz-color-swatch {
+  border: 1px solid var(--r-line);
+  border-radius: 999px;
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+  }
+
+  .sheet-panel {
+    animation-name: fade-in !important;
+  }
+
+  [data-state="closing"] .sheet-panel {
+    animation-name: fade-out !important;
+  }
+
+  /* Loaders are functional motion: they keep going, just slower. */
+  .animate-spin,
+  .animate-pulse {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
 }

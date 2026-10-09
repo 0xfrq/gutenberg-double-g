@@ -5,7 +5,11 @@ import { gutenbergFetch, GutenbergListResponse } from "@/lib/gutenberg";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function pickTopSubject(books: { subjects?: string[] | null }[]) {
+// How many favorite subjects to try before giving up — each try is one
+// catalogue request.
+const MAX_SUBJECT_TRIES = 3;
+
+function rankSubjects(books: { subjects?: string[] | null }[]) {
   const counts = new Map<string, number>();
   books.forEach((book) => {
     (book.subjects || []).forEach((subject) => {
@@ -14,16 +18,15 @@ function pickTopSubject(books: { subjects?: string[] | null }[]) {
     });
   });
 
-  let top = "";
-  let score = 0;
-  counts.forEach((count, subject) => {
-    if (count > score) {
-      top = subject;
-      score = count;
-    }
-  });
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([subject]) => subject);
+}
 
-  return top;
+// Gutenberg subjects look like "England -- Social life and customs -- Fiction".
+// The catalogue search matches the leading heading far more reliably.
+function searchableSubject(subject: string) {
+  return subject.split(" -- ")[0].replace(/\([^)]*\)/g, "").trim();
 }
 
 export async function GET() {
@@ -39,7 +42,7 @@ export async function GET() {
     .map((favorite) => Number(favorite.item_id))
     .filter((id) => Number.isFinite(id));
 
-  let seed = "";
+  const subjects: string[] = [];
 
   if (gutenbergIds.length > 0) {
     const { data: books } = await supabase
@@ -47,19 +50,32 @@ export async function GET() {
       .select("subjects")
       .in("id", gutenbergIds);
 
-    seed = pickTopSubject(books || []);
+    for (const subject of rankSubjects(books || [])) {
+      const query = searchableSubject(subject);
+      if (query && !subjects.includes(query)) subjects.push(query);
+      if (subjects.length === MAX_SUBJECT_TRIES) break;
+    }
   }
 
-  const searchParams = new URLSearchParams();
-  if (seed) {
-    searchParams.set("search", seed);
-  }
-  searchParams.set("page", "1");
+  const favoriteIds = new Set(gutenbergIds);
 
+  // The catalogue searches with `q`; a `search` parameter is silently ignored.
+  for (const subject of subjects) {
+    const response = await gutenbergFetch<GutenbergListResponse>(
+      "books",
+      new URLSearchParams({ q: subject })
+    );
+    const results = (response.results || []).filter((book) => !favoriteIds.has(book.id));
+    if (results.length > 0) {
+      return NextResponse.json({ seed: subject, results });
+    }
+  }
+
+  // No favorites, or none of their subjects matched: no personal seed.
   const response = await gutenbergFetch<GutenbergListResponse>(
     "books",
-    searchParams
+    new URLSearchParams({ page: "1" })
   );
 
-  return NextResponse.json({ seed, results: response.results || [] });
+  return NextResponse.json({ seed: "", results: response.results || [] });
 }
