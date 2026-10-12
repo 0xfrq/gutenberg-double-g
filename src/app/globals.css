@@ -321,6 +321,16 @@ input[type="number"] {
   *::after {
     animation-duration: 150ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  /* Only elements that already transition get the short crossfade. A blanket
+     transition-duration would animate every property of every element
+     (transition-property defaults to "all") — including the reader's page
+     iframe, which epub.js then measures mid-resize and mis-paginates. */
+  [class*="transition"],
+  [class*="duration-"],
+  .reader-icon-btn {
+    transition-property: opacity, color, background-color, border-color !important;
     transition-duration: 150ms !important;
   }
 

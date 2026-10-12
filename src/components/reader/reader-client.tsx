@@ -21,6 +21,9 @@ type EpubLocation = {
 
 type EpubContents = {
   addStylesheet?: (url: string) => Promise<unknown>;
+  cfiFromRange?: (range: Range) => string;
+  resizeCheck?: () => void;
+  document?: Document;
   window?: Window;
 };
 
@@ -40,6 +43,7 @@ type EpubRendition = {
   next: () => Promise<unknown>;
   prev: () => Promise<unknown>;
   currentLocation: () => EpubLocation | Promise<EpubLocation>;
+  getContents: () => EpubContents[];
   destroy: () => void;
 };
 
@@ -53,6 +57,7 @@ type EpubBook = {
     cfiFromLocation: (location: number) => string;
     total: number;
   };
+  package?: { metadata?: { layout?: string } };
   destroy: () => void;
 };
 
@@ -142,8 +147,8 @@ function applyThemeToRendition(rendition: EpubRendition | null, settings: Reader
   // 20px top/bottom, margin 0). Any extra padding from us — especially on
   // <html> — pushes that fixed-width body outside the page and clips text,
   // which caused cut-off / misaligned lines on mobile. So we only set colors
-  // and typography here, and add defensive rules so the book's own styles
-  // can never overflow the page.
+  // here (typography is handled by applyTypography below), and add defensive
+  // rules so the book's own styles can never overflow the page.
   rendition.themes.register("user", {
     html: {
       background: `${colors.background} !important`,
@@ -151,19 +156,7 @@ function applyThemeToRendition(rendition: EpubRendition | null, settings: Reader
     body: {
       background: `${colors.background} !important`,
       color: `${colors.text} !important`,
-      "font-family": `${settings.fontFamily} !important`,
-      "font-size": `${settings.fontSize}px`,
-      "line-height": `${settings.lineHeight} !important`,
       "overflow-wrap": "break-word",
-    },
-    // Many EPUBs (Gutenberg's front matter included) set their own font and
-    // leading on wrappers and paragraphs, which would make the font and
-    // spacing settings appear to do nothing. Code keeps its monospace.
-    "body *:not(pre):not(code):not(kbd):not(samp):not(tt)": {
-      "font-family": "inherit !important",
-    },
-    "p, li, blockquote, dd, dt, div, section, article": {
-      "line-height": "inherit !important",
     },
     // Gutenberg (and many other) EPUBs ship their own hard-coded colors:
     // white body, white boxes behind links and page numbers, blue/purple/
@@ -195,6 +188,133 @@ function applyThemeToRendition(rendition: EpubRendition | null, settings: Reader
   // book's defaults.
   rendition.themes.override("background-color", colors.background, true);
   rendition.themes.override("color", colors.text, true);
+}
+
+// ─── Typography ──────────────────────────────────────────────────────────────
+// Books style their text in every way imaginable: !important rules on classes
+// and IDs, fixed pt/px sizes, keyword sizes ("medium"), inline styles. Plain
+// stylesheet rules lose to some of those, which is why the font settings used
+// to work on some books and not others. The reader's typography is applied in
+// two steps that win on every book:
+//
+//   1. Size. When a page document loads, each element's font size is measured
+//      as the book styled it and rewritten as a multiple of the root size
+//      (rem), as an inline !important declaration. The book's main text
+//      becomes exactly 1rem, so "18" means 18px body text, while headings and
+//      footnotes keep the book's proportions. Changing the size later only
+//      changes the root size.
+//   2. Font family and spacing. Set from a CSS cascade layer with !important.
+//      Layered !important declarations outrank every unlayered !important one,
+//      whatever its specificity, so no book stylesheet can override them.
+
+const TYPOGRAPHY_STYLE_ID = "dogear-typography";
+const XHTML_NS = "http://www.w3.org/1999/xhtml";
+const HEADINGS = "h1, h2, h3, h4, h5, h6";
+
+function typographyCss(settings: ReaderSettings) {
+  // Font values come from a cookie; keep them from breaking out of the rule.
+  const family = settings.fontFamily.replace(/[{};<>\\]/g, "") || defaultSettings.fontFamily;
+  return `@layer dogear-reader {
+  html {
+    font-size: ${settings.fontSize}px !important;
+    -webkit-text-size-adjust: 100% !important;
+    text-size-adjust: 100% !important;
+  }
+  html, body { font-family: ${family} !important; }
+  body { font-size: 1rem !important; line-height: ${settings.lineHeight} !important; }
+  body *:not(pre):not(code):not(kbd):not(samp):not(tt):not(var) { font-family: inherit !important; }
+  body *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6) { line-height: inherit !important; }
+  ${HEADINGS} { line-height: 1.3 !important; }
+}`;
+}
+
+/** Step 1: rewrite every element's size relative to the book's main text. */
+function normalizeFontSizes(doc: Document) {
+  const body = doc.body;
+  const view = doc.defaultView;
+  if (!body || !view) return;
+
+  const sizes = new Map<HTMLElement, number>();
+  const textBySize = new Map<number, number>();
+
+  for (const element of [body, ...Array.from(body.querySelectorAll("*"))]) {
+    // SVG and MathML size their own text.
+    if (element.namespaceURI !== XHTML_NS) continue;
+    const htmlElement = element as HTMLElement;
+    const size = parseFloat(view.getComputedStyle(htmlElement).fontSize);
+    if (!Number.isFinite(size)) continue;
+    sizes.set(htmlElement, size);
+
+    // Weigh sizes by how much running text uses them, ignoring headings, so a
+    // title page doesn't turn its heading into "body text".
+    if (htmlElement.closest(HEADINGS)) continue;
+    let textLength = 0;
+    htmlElement.childNodes.forEach((node) => {
+      if (node.nodeType === 3) textLength += node.textContent?.trim().length ?? 0;
+    });
+    if (textLength > 0) {
+      // Round only away float noise, so the main text lands on exactly 1rem.
+      const key = Math.round(size * 1000) / 1000;
+      textBySize.set(key, (textBySize.get(key) ?? 0) + textLength);
+    }
+  }
+
+  let base = sizes.get(body) ?? 16;
+  let mostText = 0;
+  textBySize.forEach((length, size) => {
+    if (length > mostText) {
+      mostText = length;
+      base = size;
+    }
+  });
+  if (!(base > 0)) return;
+
+  // Measure everything first, then write, so no element is read after its
+  // parent has already been resized.
+  sizes.forEach((size, element) => {
+    element.style.setProperty("font-size", `${Number((size / base).toFixed(4))}rem`, "important");
+    // Inline !important fonts would still beat the reader's layer.
+    for (const property of ["font-family", "line-height"]) {
+      if (element.style.getPropertyPriority(property) === "important") element.style.removeProperty(property);
+    }
+  });
+}
+
+/** Step 2: add or update the reader's typography stylesheet in a page document. */
+function applyTypography(contents: EpubContents, settings: ReaderSettings) {
+  const doc = contents.document;
+  if (!doc?.head) return;
+  let style = doc.getElementById(TYPOGRAPHY_STYLE_ID);
+  if (!style) {
+    style = doc.createElement("style");
+    style.id = TYPOGRAPHY_STYLE_ID;
+    doc.head.appendChild(style);
+  }
+  style.textContent = typographyCss(settings);
+}
+
+/** A CFI for the very end of a page document — where "previous page" lands. */
+function endOfSectionCfi(contents: EpubContents) {
+  const doc = contents.document;
+  if (!doc?.body || !contents.cfiFromRange) return null;
+  const walker = doc.createTreeWalker(doc.body, 4 /* NodeFilter.SHOW_TEXT */);
+  let last: Text | null = null;
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (node.textContent?.trim()) last = node;
+  }
+  if (!last) return null;
+  try {
+    // Point at the last visible character: trailing whitespace takes no space
+    // on screen, so epub.js would measure it at x=0 and show the first page.
+    const visibleLength = (last.textContent ?? "").replace(/\s+$/, "").length;
+    const range = doc.createRange();
+    range.setStart(last, Math.max(0, visibleLength - 1));
+    range.collapse(true);
+    return contents.cfiFromRange(range);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Cookie helpers ────────────────────────────────────────────────────────────
@@ -307,6 +427,28 @@ function sameDocument(a: string, b: string) {
   return x === y || x.endsWith(`/${y}`) || y.endsWith(`/${x}`);
 }
 
+// Where a freshly rendered chapter should land once the reader's typography
+// has reflowed it. `at` lets stale intents expire.
+type Landing = ({ kind: "target"; target: string } | { kind: "end" }) & { at: number };
+const LANDING_TTL_MS = 5000;
+
+function landing(intent: { kind: "target"; target: string } | { kind: "end" }): Landing {
+  return { ...intent, at: Date.now() };
+}
+
+function isFixedLayout(book: EpubBook | null) {
+  return book?.package?.metadata?.layout === "pre-paginated";
+}
+
+function waitForFonts(pages: EpubContents[], timeoutMs = 1500) {
+  return Promise.race([
+    Promise.all(pages.map((contents) => contents.document?.fonts?.ready)),
+    new Promise((resolve) => window.setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+const nextFrame = () => new Promise((resolve) => window.requestAnimationFrame(resolve));
+
 const noopSubscribe = () => () => {};
 const CENTER_TAP_HINT_KEY = "dogear:center-tap-hint";
 
@@ -343,6 +485,14 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const [pageInfo, setPageInfo] = useState<PageInfo>(null);
   const [locationsReady, setLocationsReady] = useState(false);
   const locationsReadyRef = useRef(false);
+  // epub.js places the page *before* content hooks restyle a chapter, so the
+  // reader re-places it afterwards: at an explicit target, or at the chapter's
+  // end when paging backwards into it.
+  const landingRef = useRef<Landing | null>(null);
+  // When the most recent chapter started rendering (ms).
+  const lastRenderAtRef = useRef(0);
+  // Start of the page on screen — settings changes return here after reflow.
+  const currentCfiRef = useRef<string | null>(null);
   const [scrubValue, setScrubValue] = useState<number | null>(null);
   const [pageJumpOpen, setPageJumpOpen] = useState(false);
   const [pageJumpValue, setPageJumpValue] = useState("");
@@ -463,6 +613,36 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       rendition.hooks.content.register((contents) => {
         void contents.addStylesheet?.(GOOGLE_FONTS_HREF);
         void contents.addStylesheet?.(OPENDYSLEXIC_HREF);
+
+        // Fixed-layout books (comics, scanned pages) have no text to reflow.
+        if (isFixedLayout(book) || !contents.document) return;
+        try {
+          normalizeFontSizes(contents.document);
+        } catch (error) {
+          console.error("Couldn’t normalize this chapter’s font sizes", error);
+        }
+        applyTypography(contents, settingsRef.current);
+
+        // Re-measure the restyled chapter (once its fonts are in), then land
+        // where the reader was heading. Only a landing requested before this
+        // chapter started rendering belongs to it — a newer one is for the
+        // next navigation, and a chapter that's already been replaced (the
+        // reader kept paging) leaves it alone.
+        const renderedAt = Date.now();
+        lastRenderAtRef.current = renderedAt;
+        const settle = async () => {
+          await nextFrame();
+          await waitForFonts([contents]);
+          if (destroyed || !rendition.getContents().includes(contents)) return;
+          contents.resizeCheck?.();
+          const pending = landingRef.current;
+          if (!pending || pending.at > renderedAt) return;
+          landingRef.current = null;
+          if (renderedAt - pending.at > LANDING_TTL_MS) return;
+          const target = pending.kind === "target" ? pending.target : endOfSectionCfi(contents);
+          if (target) await rendition.display(target);
+        };
+        void settle();
       });
 
       // Apply the saved theme *before* the first page renders. epub.js then
@@ -475,6 +655,11 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
       // global CFI-based numbers and a throttled progress save.
       const handleRelocated = (location: EpubLocation) => {
         const start = location?.start;
+        if (start?.cfi) currentCfiRef.current = start.cfi;
+        // The navigation finished inside the chapter already on screen, so
+        // nothing reflows and its landing request is spent.
+        const pending = landingRef.current;
+        if (pending && lastRenderAtRef.current < pending.at) landingRef.current = null;
         if (start?.href) setChapterHref(start.href);
         setScrubValue(null);
         if (locationsReadyRef.current && start?.cfi) {
@@ -517,8 +702,14 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
 
       // Arrow keys still turn pages after a tap moves focus into the book.
       rendition.on("keyup", (event: KeyboardEvent) => {
-        if (event.key === "ArrowRight") void rendition.next();
-        if (event.key === "ArrowLeft") void rendition.prev();
+        if (event.key === "ArrowRight") {
+          landingRef.current = null;
+          void rendition.next();
+        }
+        if (event.key === "ArrowLeft") {
+          landingRef.current = landing({ kind: "end" });
+          void rendition.prev();
+        }
       });
 
       book.loaded.navigation
@@ -591,6 +782,30 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     applyThemeToRendition(renditionRef.current, settings);
   }, [settings, renditionReady]);
 
+  // ── Apply typography changes to the pages already on screen ────────────────
+  // New chapters pick the settings up in the content hook; pages already
+  // rendered are restyled here, re-measured, and returned to the same spot.
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!renditionReady || !rendition) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const pages = rendition.getContents?.() ?? [];
+      if (pages.length === 0 || isFixedLayout(bookRef.current)) return;
+      pages.forEach((contents) => applyTypography(contents, settingsRef.current));
+      await nextFrame();
+      // A newly picked font may still be downloading; measure with it.
+      await waitForFonts(pages);
+      if (cancelled) return;
+      pages.forEach((contents) => contents.resizeCheck?.());
+      if (currentCfiRef.current) void rendition.display(currentCfiRef.current);
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [settings.fontSize, settings.fontFamily, settings.lineHeight, renditionReady]);
+
   const activeTheme = resolveThemeColors(settings);
 
   // Match the phone's status bar / browser chrome to the page being read.
@@ -639,8 +854,14 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
         return;
       }
       if (sheet) return;
-      if (event.key === "ArrowRight") void renditionRef.current?.next();
-      if (event.key === "ArrowLeft") void renditionRef.current?.prev();
+      if (event.key === "ArrowRight") {
+        landingRef.current = null;
+        void renditionRef.current?.next();
+      }
+      if (event.key === "ArrowLeft") {
+        landingRef.current = landing({ kind: "end" });
+        void renditionRef.current?.prev();
+      }
       if (event.key === "f") {
         event.preventDefault();
         toggleFullscreen();
@@ -682,13 +903,20 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   };
 
   const goPrev = () => {
+    landingRef.current = landing({ kind: "end" });
     void renditionRef.current?.prev();
     hideChromeAfterTurn();
   };
 
   const goNext = () => {
+    landingRef.current = null;
     void renditionRef.current?.next();
     hideChromeAfterTurn();
+  };
+
+  const showTarget = (target: string) => {
+    landingRef.current = landing({ kind: "target", target });
+    void renditionRef.current?.display(target);
   };
 
   const jumpToPage = (page: number) => {
@@ -696,7 +924,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
     const clamped = Math.max(1, Math.min(page, pageInfo.total));
     try {
       const cfi = bookRef.current?.locations.cfiFromLocation(clamped - 1);
-      if (cfi) void renditionRef.current?.display(cfi);
+      if (cfi) showTarget(cfi);
     } catch {
       // ignore — locations may not be generated yet
     }
@@ -715,7 +943,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   };
 
   const goToChapter = (href: string) => {
-    void renditionRef.current?.display(href);
+    showTarget(href);
     setSheet(null);
     setChromeVisible(false);
   };
@@ -729,7 +957,7 @@ export default function ReaderClient({ id, source }: ReaderClientProps) {
   const handleResume = () => {
     if (!resumeToast?.cfi) return;
     try {
-      void renditionRef.current?.display(resumeToast.cfi);
+      showTarget(resumeToast.cfi);
     } catch { /* ignore */ }
     dismissResumeToast();
     setChromeVisible(false);
